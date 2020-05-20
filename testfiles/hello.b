@@ -1,0 +1,3 @@
+v              v,<
+>"hello, world">:|
+                 @
