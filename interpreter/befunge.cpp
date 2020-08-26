@@ -216,7 +216,11 @@ void step() {
                 if (event.type == SDL_KEYDOWN) {
                     push(event.key.keysym.sym);
                     push(2);
-                    printf("%d\n", event.key.keysym.sym);
+                    //printf("%d\n", event.key.keysym.sym);
+                }
+                if (event.type == SDL_KEYUP) {
+                    push(event.key.keysym.sym);
+                    push(3);
                 }
                 return;
             }

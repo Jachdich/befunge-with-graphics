@@ -104,8 +104,13 @@ class Interpreter:
                 event = pygame.event.poll()
                 if event.type == pygame.KEYDOWN:
                     self.push(event.key)
-
-                self.push(event.type)
+                    self.push(2)
+                elif event.type == pygame.KEYUP:
+                    self.push(event.key)
+                    self.push(3)
+                elif event.type == pygame.QUIT:
+                    self.push(1)
+                
                 if False:
                     print(1.0 / (time.time() - self.a))
                     self.a = time.time()
