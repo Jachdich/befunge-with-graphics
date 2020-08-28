@@ -5,11 +5,12 @@
 #include <vector>
 #include <string.h>
 #include <SDL2/SDL.h>
+#include <iostream>
 using namespace std;
-#define table_t signed long
+typedef signed long table_t;
 #define stacksize 1024 * 1024 * 102
 
-vector<table_t> * table;
+vector<vector<table_t>> table;
 signed long stack[stacksize];
 int return_vector_stack[1024];
 int sp = 0;
@@ -34,23 +35,20 @@ void error(std::string msg, bool exit) {
     running = !exit;
 }
 
-void clean(vector<table_t> * table) {
+void clean(vector<vector<table_t>>& table) {
     long unsigned int maxlen = 0;
-    for (int i = 0; i < tablelen; i++) {
+    for (int i = 0; i < table.size(); i++) {
         vector<table_t> line = table[i];
         if (line.size() > maxlen) {
             maxlen = line.size();
         }
     }
     //printf("maxlen: %lu\n", maxlen);
-    for (int i = 0; i < tablelen; i++) {
+    for (int i = 0; i < table.size(); i++) {
         int j = table[i].size();
         //printf("size init: %d\n", j);
-        table[i].reserve(maxlen);
-        while (j < maxlen) {
-            table[i][j] = 0;
-            ++j;
-        }
+        table[i].resize(maxlen, 0);
+        //printf("size post: %d\n", table[i].size());
     }
 }
 
@@ -95,15 +93,27 @@ void advanceIP(int x) {
     }
 }
 
+const std::string reset("\033[0m");
+const std::string green("\033[42m");
+
 void step() {
     char curr_char = table[ip[1]][ip[0]];
     if (debug) {
+        for (int i = 0; i < table.size(); i++) {
+            for (int j = 0; j < table[i].size(); j++) {
+                if (i == ip[1] && j == ip[0]) cout << green;
+                cout << (char)table[i][j];
+                if (i == ip[1] && j == ip[0]) cout << reset;
+            }
+            cout << "\n";
+        }
+    /*
         printf("%d, %d, ", ip[0], ip[1]);
         printf("%c, [", curr_char);
         for (int i = 0; i < sp; i++) {
             printf("%li, ", stack[i]);
         }
-        printf("]\n");
+        printf("]\n");*/
     }
     if (curr_char == '"') {
         stringMode = !stringMode; return;
@@ -119,7 +129,7 @@ void step() {
             case 'v': direction = curr_char; return;
             case '^': direction = curr_char; return;
         }
-    
+
         switch (curr_char) {
             case '+': { int a = pop(); int b = pop(); push(b + a); return; }
             case '-': { int a = pop(); int b = pop(); push(b - a); return; }
@@ -137,7 +147,7 @@ void step() {
           //case '?' : {direction = "><v^".charAt((int)(Math.random() * 4)); return;}
             case '.': if (!quiet) { printf("%li ", pop()); } else { pop(); } return;
             case ',': if (!quiet) { printf("%c", (char)pop()); } else { pop(); } return;
-            
+
             case 'j': {
                 int b = pop();
                 int a = pop();
@@ -157,13 +167,13 @@ void step() {
                 ip[0] = popvector();
                 //advanceIP(-1);
                 return;
-                
+
             case 'g': {
                 int b = pop();
                 push(table[pop()][b]);
                 return;
             }
-            
+
             case 'p': {
                 int b = pop();
                 int a = pop();
@@ -171,7 +181,7 @@ void step() {
                 table[a][b] = c;
                 return;
             }
-            
+
             case 's': {
                 int b = pop();
                 int a = pop();
@@ -179,23 +189,23 @@ void step() {
                     error("Failed to initialise screen", true);
                     return;
                 }
-                
+
                 if ((window = SDL_CreateWindow("foo", 0, 0, b, a, SDL_WINDOW_SHOWN/*SDL_WINDOW_OPENGL*/)) == NULL) {
                     error("Failed to initiate screen", true);
                     return;
                 }
-                
+
                 if ((renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED)) == NULL) {
                     printf("%s\n", SDL_GetError());
                     error("Unable to init renderer", true);
                 }
             }
-            
+
             case 'c':
                 if (renderer == NULL) { error("Screen not initialised", true); return; }
                 SDL_RenderClear(renderer);
                 return;
-                
+
             case 'x': {
                 if (renderer == NULL) { error("Screen not initialised", true); return; }
                 int b = pop();
@@ -203,7 +213,7 @@ void step() {
                 SDL_RenderDrawPoint(renderer, a, b);
                 return;
             }
-                
+
             case 'z': {
                 if (renderer == NULL) { error("Screen not initialised", true); return; }
                 SDL_Event event;
@@ -224,7 +234,7 @@ void step() {
                 }
                 return;
             }
-                
+
             case 'l': {
                 if (renderer == NULL) { error("Screen not initialised", true); return; }
                 int y2 = pop();
@@ -234,7 +244,7 @@ void step() {
                 SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
                 return;
             }
-                
+
             case 'f': {
                 if (renderer == NULL) { error("Screen not initialised", true); return; }
                 int b = pop();
@@ -243,13 +253,13 @@ void step() {
                 SDL_SetRenderDrawColor(renderer, r, g, b, 0xFF);
                 return;
             }
-                
+
             case 'u':
                 if (renderer == NULL) { error("Screen not initialised", true); return; }
                 SDL_RenderPresent(renderer);
                 return;
 
-            
+
             case '@': running = false; return;
         }
     }
@@ -272,7 +282,7 @@ int main(int argc, char ** argv) {
             debug = true;
         }
     }
-    
+
     ifstream myReadFile;
     myReadFile.open(argv[1]);
     if (myReadFile.is_open()) {
@@ -287,22 +297,14 @@ int main(int argc, char ** argv) {
     }
     myReadFile.close();
 
-    tablelen = count(source.begin(), source.end(), '\n');
-    table = new vector<table_t>[tablelen];
-
     std::stringstream ss(source);
     std::string to;
-    int i = 0;
 
     while(std::getline(ss,to,'\n')) {
-        //printf("Line is:'%s'\n", to.c_str());
-        if (to.length() > 0) {
-            table[i] = toVector(to);
-        }
-        i++;
+        table.push_back(vector<table_t>(to.begin(), to.end()));
     }
     clean(table);
-    
+
     while (running) {
         step();
         advanceIP(1);
@@ -325,17 +327,17 @@ graphics operations, not yet supported
                 a = pop();
                 screen = new GraphicsWindow(a, b);
                 return;
-            
+
             case 'c':
                 screen.clear();
                 return;
-                
+
             case 'x':
                 b = pop();
                 a = pop();
                 screen.pixel(a, b);
                 return;
-                
+
             case 'z':
                 Event e = screen.getEvent();
                 for (int x: e.args) {
@@ -343,7 +345,7 @@ graphics operations, not yet supported
                 }
                 push(e.type);
                 return;
-                
+
             case 'l':
                 int y2 = pop();
                 int x2 = pop();
@@ -351,21 +353,21 @@ graphics operations, not yet supported
                 int x1 = pop();
                 screen.line(x1, y1, x2, y2);
                 return;
-                
+
             case 'f':
                 b = pop();
                 int g = pop();
                 int r = pop();
                 screen.setForeground(new Color(r, g, b));
                 return;
-            
+
             case 'b':
                 b = pop();
                 int g1 = pop();
                 int r1 = pop();
                 screen.setBackground(new Color(r1, g1, b));
                 return;
-                
+
             case 'u':
                 screen.flip();
                 return;*/

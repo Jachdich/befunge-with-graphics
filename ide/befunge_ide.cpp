@@ -4,6 +4,9 @@
 #include <signal.h>
 #include <vector>
 #include <fstream>
+#include <iostream>
+
+typedef std::vector<std::vector<char>> buffer_t;
 
 struct ScreenPos {
     int x;
@@ -19,6 +22,13 @@ struct ScreenPos {
         if (x < 0) x = 0;
         if (y < 0) y = 0;
         return ScreenPos(x, y);
+    }
+
+    void setBounds(ScreenPos max) {
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+        if (x > max.x) x = max.x;
+        if (y > max.y) y = max.y;
     }
 };
 
@@ -36,18 +46,31 @@ struct Area {
     }
 };
 
+/*
+struct Buffer {
+    buffer_t data;
+
+    Buffer() {}
+
+    char& operator()(const int a, const int b) {
+        return data[b][a];
+    }
+};*/
+
 void paste();
 void cut();
 void copy(int dummy);
 
+std::string statusLine = "";
+std::string filename;
 ScreenPos max;
 ScreenPos pos;
 Area sel = {-1, -1, -1, -1};
 bool running = true;
 bool insert = false;
 
-std::vector<std::vector<char>> clipboard;
-std::vector<std::vector<char>> file;
+buffer_t clipboard;
+buffer_t file;
 std::vector<ScreenPos> posStack;
 
 ScreenPos getPos() {
@@ -70,7 +93,7 @@ void popPos() {
     setPos(pos);
 }
 
-void screenToBuffer(Area a, std::vector<std::vector<char>>& buffer) {
+void screenToBuffer(Area a, buffer_t& buffer) {
     for (int i = 0; i < buffer.size(); i++) {
         buffer[i].clear();
     }
@@ -91,27 +114,56 @@ void screenToBuffer(Area a, std::vector<std::vector<char>>& buffer) {
     }
 }
 
-void bufferToScreen(ScreenPos p, std::vector<std::vector<char>>& buffer) {
+void bufferToScreen(ScreenPos p, buffer_t& buffer) {
     for (int j = 0; j < buffer.size(); j++) {
         for (int i = 0; i < buffer[j].size(); i++) {
-            int cha = buffer[j][i];
-            mvaddch(j + p.y, i + p.x, cha);
+            mvaddch(j + p.y, i + p.x, buffer[j][i]);
         }
     }
 }
 
-void bufferToBuffer(ScreenPos p, std::vector<std::vector<char>>& a, std::vector<std::vector<char>>& b) {
-    if (b.size() <= (a.size() + p.y)) {
-        b.resize(a.size() + p.y);
+void bufferToBuffer(Area from, ScreenPos to, buffer_t &a, buffer_t& b) {
+    if (b.size() <= from.height() + to.y) {
+        b.resize(from.height() + to.y);
     }
-    for (int j = 0; j < a.size(); j++) {
-        if (b[j + pos.y].size() <= a[j].size() + p.x) {
-            b[j + pos.y].resize(a[j].size() + p.x, ' ');
+    for (int j = 0; j < from.height(); j++) {
+        if (b[j + to.y].size() <= from.width() + to.x) {
+            b[j + to.y].resize(from.width() + to.x, ' ');
         }
-        for (int i = 0; i < a[j].size(); i++) {
-            b[j + pos.y][i + pos.x] = a[j][i];
+        for (int i = 0; i < from.width(); i++) {
+            b[j + to.y][i + to.x] = a[j + from.y0][i + from.x0];
         }
     }
+}
+
+void bufferToBuffer(ScreenPos p, buffer_t &a, buffer_t& b) {
+    Area from = {0, 0, a[a.size() - 1].size(), a.size()};
+    bufferToBuffer(from, p, a, b);
+}
+
+void fileToBuffer(std::string filename, buffer_t& buffer) {
+    std::string line;
+    std::ifstream f(filename);
+    if (f.is_open()) {
+        while (getline(f, line)) {
+            buffer.push_back(std::vector<char>(line.begin(), line.end()));
+        }
+        statusLine = "[Read " + std::to_string(file.size()) + " lines]";
+    } else {
+        statusLine = "[New File]";
+    }
+    f.close();
+}
+
+void bufferToFile(std::string filename, buffer_t& buffer) {
+    std::ofstream f(filename);
+    for (int i = 0; i < buffer.size(); i++) {
+        for (int j = 0; j < buffer[i].size(); j++) {
+            f << buffer[i][j];
+        }
+        f << "\n";
+    }
+    statusLine = "[Wrote " + std::to_string(file.size()) + " lines]";
 }
 
 void log(std::string x) {
@@ -182,15 +234,18 @@ void addEffect(Area a, int effect) {
 }
 
 void drawBottomBar() {
-    pushPos();
-
     setPos(ScreenPos(0, max.y));
     if (insert) {
         printw("Insert Mode: on ");
     } else {
         printw("Insert Mode: off");
-    }
-    popPos();
+    } //16 chars
+    setPos(ScreenPos(max.x / 2 - statusLine.length() / 2, max.y));
+    printw(statusLine.c_str());
+}
+
+void save() {
+    bufferToFile(filename, file);
 }
 
 void mainLoop() {
@@ -199,7 +254,7 @@ void mainLoop() {
     if (isprint(ch) || ch == 10) {
         inpchar(ch);
     }
-    //printw((std::to_string(ch) + " ").c_str()); refresh();
+    //printw((std::to_string(ch) + " ").c_str()); if (ch == 9) running = false; refresh(); return;
     ScreenPos before = pos;
     if (ch == KEY_UP || ch == 337) {
         pos.y -= 1;
@@ -211,8 +266,10 @@ void mainLoop() {
        pos.x += 1;
    }
 
+   pos.setBounds(max);
+
    switch (ch) {
-       case 27: running = false; break;
+       case 27: running = false; save(); break;
         case KEY_BACKSPACE: backspace(); break;
         case 402: //shr
         case 337: //shu
@@ -237,12 +294,11 @@ void mainLoop() {
         }
         case 22: paste(); break;
         case 24: cut(); break;
-        case KEY_END: setPos(ScreenPos(max.x, getPos().y)); break;
-        case KEY_HOME: setPos(ScreenPos(0, getPos().y)); break;
+        case 19: save(); break;
+        case KEY_END: pos.x = max.x; break;
+        case KEY_HOME: pos.x = 0; break;
         case 9: toggleInsert(); break;
-    }
-    if (sel.x0 >= 0) {
-        addEffect(sel, A_REVERSE);
+        case 17: running = false; break; //don't save, then exit
     }
     bufferToScreen(ScreenPos(0, 0), file);
     if (sel.x0 > -1) {
@@ -254,22 +310,30 @@ void mainLoop() {
 }
 
 void copy(int dummy) {
-    screenToBuffer(sel, clipboard);
+    //screenToBuffer(sel, clipboard);
+    bufferToBuffer(sel, ScreenPos(0, 0), file, clipboard);
 }
 
 void cut() {
     copy(0);
-    std::vector<std::vector<char>> spaces = std::vector<std::vector<char>>(sel.height(), std::vector<char>(sel.width(), ' '));
+    buffer_t spaces = buffer_t(sel.height(), std::vector<char>(sel.width(), ' '));
     bufferToBuffer(ScreenPos(sel.x0, sel.y0), spaces, file);
 }
 
 void paste() {
+    if (sel.x0 >= 0) { //there is a selection
+        pos = ScreenPos(sel.x0, sel.y0); //set pos to top-left
+    }
     bufferToScreen(pos, clipboard);
     bufferToBuffer(pos, clipboard, file);
-    refresh();
 }
 
-int main() {
+int main(int argc, char ** argv) {
+    if (argc != 2) {
+        std::cout << "Usage: " + std::string(argv[0]) + " <filename>\n";
+        return 1;
+    }
+    filename = std::string(argv[1]);
     signal(SIGINT, copy);
     initscr();
     raw();
@@ -279,7 +343,11 @@ int main() {
     int y,x;
     getmaxyx(stdscr, y, x);
     max = ScreenPos(x - 1, y - 1);
+    fileToBuffer(filename, file);
+    bufferToScreen(ScreenPos(0, 0), file);
     drawBottomBar();
+    pos = ScreenPos(0, 0);
+    setPos(pos);
     while (running) {
         mainLoop();
     }
