@@ -5,6 +5,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include "befunge.h"
 
 typedef std::vector<std::vector<char>> buffer_t;
 
@@ -22,6 +23,16 @@ struct ScreenPos {
         if (x < 0) x = 0;
         if (y < 0) y = 0;
         return ScreenPos(x, y);
+    }
+
+    ScreenPos operator+=(const ScreenPos& other) {
+        this->x += other.x;
+        this->y += other.y;
+        return ScreenPos(this->x, this->y);
+    }
+
+    ScreenPos operator+(const ScreenPos& other) {
+        return ScreenPos(this->x + other.x, this->y + other.y);
     }
 
     void setBounds(ScreenPos max) {
@@ -65,6 +76,8 @@ std::string statusLine = "";
 std::string filename;
 ScreenPos max;
 ScreenPos pos;
+ScreenPos dir = ScreenPos(1, 0);
+ScreenPos offset = ScreenPos(0, 0);
 Area sel = {-1, -1, -1, -1};
 bool running = true;
 bool insert = false;
@@ -166,6 +179,22 @@ void bufferToFile(std::string filename, buffer_t& buffer) {
     statusLine = "[Wrote " + std::to_string(file.size()) + " lines]";
 }
 
+void stripEmptyLines(buffer_t& buffer) {
+    int remove_from = -1;
+    for (int i = buffer.size() - 1; i >= 0; i--) {
+        for (char c : buffer[i]) {
+            if (c != ' ') {
+                remove_from = i + 1;
+                break;
+            }
+        }
+        if (remove_from != -1) break;
+    }
+    if (remove_from != -1) {
+        buffer.erase(buffer.begin() + remove_from, buffer.end());
+    }
+}
+
 void log(std::string x) {
     std::ofstream f("log.txt", std::ios::app);
     f << x << "\n";
@@ -181,37 +210,38 @@ void inpchar(char ch) {
     if (ch == 10) { //newline
         pos.y += 1;
     } else {
-        pos.x += 1;
+        pos += dir;
     }
-    setPos(pos);
-    if (beforePos.y >= file.size()) {
-        file.resize(beforePos.y + 1);
+    ScreenPos adj = beforePos - offset;
+    if (adj.y >= file.size()) {
+        file.resize(adj.y + 1);
     }
-    if (beforePos.x >= file[beforePos.y].size()) {
-        file[beforePos.y].resize(beforePos.x + 1, ' ');
+    if (adj.x >= file[adj.y].size()) {
+        file[adj.y].resize(adj.x + 1, ' ');
     }
     if (insert) {
         if (ch == 10) {
-            file.insert(file.begin() + pos.y, std::vector<char>());
+            file.insert(file.begin() + pos.y + offset.y, std::vector<char>());
         } else {
-            file[beforePos.y].insert(beforePos.x + file[beforePos.y].begin(), ch);
+            file[adj.y].insert(adj.x + file[adj.y].begin(), ch);
         }
     } else {
-        file[beforePos.y][beforePos.x] = ch;
+        file[adj.y][adj.x] = ch;
     }
 }
 
 void backspace() {
     ScreenPos beforePos = pos;
-    mvaddch(pos.y, pos.x - 1, ' ');
-    pos = pos - ScreenPos(1, 0);
-    setPos(pos);
-    if (beforePos.y >= file.size()) { return; }
-    if (beforePos.x > file[beforePos.y].size()) { return; }
+    mvaddch(pos.y - offset.y, pos.x - offset.x - 1, ' ');
+    pos = pos - dir;
+    ScreenPos adj = beforePos - offset,
+              adja= pos - offset;
+    if (adj.y >= file.size()) { return; }
+    if (adj.x > file[adj.y].size()) { return; }
     if (insert) {
-        file[pos.y].erase(file[pos.y].begin() + pos.x);
+        file[adja.y].erase(file[adja.y].begin() + adja.x);
     } else {
-        file[pos.y][pos.x] = ' ';
+        file[adja.y][adja.x] = ' ';
     }
 }
 
@@ -245,10 +275,44 @@ void drawBottomBar() {
 }
 
 void save() {
+    stripEmptyLines(file);
     bufferToFile(filename, file);
 }
 
+void scrollDown() {
+    offset.y -= 1;
+}
+
+void scrollUp() {
+    offset.y += 1;
+    if (offset.y > 0) offset.y = 0;
+}
+
+void scrollLeft() {
+    offset.x += 1;
+    if (offset.x > 0) offset.x = 0;
+}
+
+void scrollRight() {
+    offset.x -= 1;
+}
+
+int x = 0;
+bool progRunning = false;
+void run() {
+    progRunning = true;
+}
+
 void mainLoop() {
+    if (progRunning) {
+        timeout(0);
+        int ch = getch();
+        step();
+        if (ch == 10) progRunning = false;
+        refresh();
+        return;
+    }
+    timeout(-1);
     int ch = getch();
     erase();
     if (isprint(ch) || ch == 10) {
@@ -264,6 +328,18 @@ void mainLoop() {
         pos.y += 1;
    } else if (ch == KEY_RIGHT || ch == 402) {
        pos.x += 1;
+   }
+   if (pos.y > max.y) {
+       scrollDown();
+   }
+   if (pos.y < 0) {
+       scrollUp();
+   }
+   if (pos.x > max.x) {
+       scrollRight();
+   }
+   if (pos.x < 0) {
+       scrollLeft();
    }
 
    pos.setBounds(max);
@@ -299,8 +375,13 @@ void mainLoop() {
         case KEY_HOME: pos.x = 0; break;
         case 9: toggleInsert(); break;
         case 17: running = false; break; //don't save, then exit
+        case 566: dir = ScreenPos(0, -1); break; //ctrl-up
+        case 560: dir = ScreenPos(1,  0); break; //ctrl-right
+        case 525: dir = ScreenPos(0,  1); break; //ctrl-down
+        case 545: dir = ScreenPos(-1, 0); break; //ctrl-left
+        case 269: run(); break; //f5: run
     }
-    bufferToScreen(ScreenPos(0, 0), file);
+    bufferToScreen(offset, file);
     if (sel.x0 > -1) {
         addEffect(sel, A_REVERSE);
     }

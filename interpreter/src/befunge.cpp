@@ -1,13 +1,12 @@
 #include <stdio.h>
 #include <sstream>
-#include <algorithm>
 #include <fstream>
 #include <vector>
 #include <string.h>
 #include <SDL2/SDL.h>
 #include <iostream>
+#include "befunge.h"
 using namespace std;
-typedef signed long table_t;
 #define stacksize 1024 * 1024 * 102
 
 vector<vector<table_t>> table;
@@ -15,8 +14,6 @@ signed long stack[stacksize];
 int return_vector_stack[1024];
 int sp = 0;
 int vector_sp = 0;
-
-string source;
 
 int  ip[] = {0, 0};
 char direction = '>';
@@ -37,15 +34,14 @@ void error(std::string msg, bool exit) {
 
 void clean(vector<vector<table_t>>& table) {
     long unsigned int maxlen = 0;
-    for (int i = 0; i < table.size(); i++) {
+    for (unsigned int i = 0; i < table.size(); i++) {
         vector<table_t> line = table[i];
         if (line.size() > maxlen) {
             maxlen = line.size();
         }
     }
     //printf("maxlen: %lu\n", maxlen);
-    for (int i = 0; i < table.size(); i++) {
-        int j = table[i].size();
+    for (unsigned int i = 0; i < table.size(); i++) {
         //printf("size init: %d\n", j);
         table[i].resize(maxlen, 0);
         //printf("size post: %d\n", table[i].size());
@@ -99,14 +95,6 @@ const std::string green("\033[42m");
 void step() {
     char curr_char = table[ip[1]][ip[0]];
     if (debug) {
-        for (int i = 0; i < table.size(); i++) {
-            for (int j = 0; j < table[i].size(); j++) {
-                if (i == ip[1] && j == ip[0]) cout << green;
-                cout << (char)table[i][j];
-                if (i == ip[1] && j == ip[0]) cout << reset;
-            }
-            cout << "\n";
-        }
     /*
         printf("%d, %d, ", ip[0], ip[1]);
         printf("%c, [", curr_char);
@@ -265,46 +253,17 @@ void step() {
     }
 }
 
-vector<table_t> toVector(string x) {
-    vector<table_t> y;
-    y.reserve(x.length());
-    for (int i = 0; i < x.length(); i++) {
-        y.push_back((table_t)x[i]);
-    }
-    return y;
-}
-
-int main(int argc, char ** argv) {
-    if (argc > 2) {
-        if (strcmp(argv[2], "-q") == 0) {
-            quiet = true;
-        } else if (strcmp(argv[2], "-d") == 0) {
-            debug = true;
-        }
-    }
-
-    ifstream myReadFile;
-    myReadFile.open(argv[1]);
-    if (myReadFile.is_open()) {
-        while (!myReadFile.eof()) {
-            string temp;
-            getline(myReadFile, temp);
-            source += temp + "\n";
-        }
-    } else {
-        printf("Error opening file\n");
-        return 1;
-    }
-    myReadFile.close();
-
-    std::stringstream ss(source);
+void loadCode(string code) {
+    std::stringstream ss(code);
     std::string to;
 
     while(std::getline(ss,to,'\n')) {
         table.push_back(vector<table_t>(to.begin(), to.end()));
     }
     clean(table);
+}
 
+void run() {
     while (running) {
         step();
         advanceIP(1);
@@ -318,56 +277,4 @@ int main(int argc, char ** argv) {
         window = NULL;
         SDL_Quit();
     }
-    return 0;
 }
-/*
-graphics operations, not yet supported
-            case 's':
-                b = pop();
-                a = pop();
-                screen = new GraphicsWindow(a, b);
-                return;
-
-            case 'c':
-                screen.clear();
-                return;
-
-            case 'x':
-                b = pop();
-                a = pop();
-                screen.pixel(a, b);
-                return;
-
-            case 'z':
-                Event e = screen.getEvent();
-                for (int x: e.args) {
-                    push(x);
-                }
-                push(e.type);
-                return;
-
-            case 'l':
-                int y2 = pop();
-                int x2 = pop();
-                int y1 = pop();
-                int x1 = pop();
-                screen.line(x1, y1, x2, y2);
-                return;
-
-            case 'f':
-                b = pop();
-                int g = pop();
-                int r = pop();
-                screen.setForeground(new Color(r, g, b));
-                return;
-
-            case 'b':
-                b = pop();
-                int g1 = pop();
-                int r1 = pop();
-                screen.setBackground(new Color(r1, g1, b));
-                return;
-
-            case 'u':
-                screen.flip();
-                return;*/
