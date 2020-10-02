@@ -5,6 +5,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include "befunge.h"
 
 typedef std::vector<std::vector<char>> buffer_t;
@@ -44,15 +45,15 @@ struct ScreenPos {
 };
 
 struct Area {
-    int x0 = -1;
-    int y0 = -1;
-    int x1 = -1;
-    int y1 = -1;
+    int32_t x0 = -1;
+    int32_t y0 = -1;
+    int32_t x1 = -1;
+    int32_t y1 = -1;
 
-    int width() {
+    int32_t width() {
         return x1 - x0;
     }
-    int height() {
+    int32_t height() {
         return y1 - y0;
     }
 };
@@ -79,7 +80,7 @@ ScreenPos pos;
 ScreenPos dir = ScreenPos(1, 0);
 ScreenPos offset = ScreenPos(0, 0);
 Area sel = {-1, -1, -1, -1};
-bool running = true;
+bool guiRunning = true;
 bool insert = false;
 
 buffer_t clipboard;
@@ -107,17 +108,17 @@ void popPos() {
 }
 
 void screenToBuffer(Area a, buffer_t& buffer) {
-    for (int i = 0; i < buffer.size(); i++) {
+    for (uint32_t i = 0; i < buffer.size(); i++) {
         buffer[i].clear();
     }
     buffer.clear();
 
-    if (buffer.size() < a.y1 - a.y0) {
+    if ((signed)buffer.size() < a.y1 - a.y0) {
         buffer.resize(a.y1 - a.y0);
     }
 
     for (int j = a.y0; j < a.y1; j++) {
-        if (buffer[j - a.y0].size() <= a.x1 - a.x0) {
+        if ((signed)buffer[j - a.y0].size() <= a.x1 - a.x0) {
             buffer[j - a.y0].resize(a.x1 - a.x0);
         }
         for (int i = a.x0; i < a.x1; i++) {
@@ -128,19 +129,19 @@ void screenToBuffer(Area a, buffer_t& buffer) {
 }
 
 void bufferToScreen(ScreenPos p, buffer_t& buffer) {
-    for (int j = 0; j < buffer.size(); j++) {
-        for (int i = 0; i < buffer[j].size(); i++) {
+    for (uint32_t j = 0; j < buffer.size(); j++) {
+        for (uint32_t i = 0; i < buffer[j].size(); i++) {
             mvaddch(j + p.y, i + p.x, buffer[j][i]);
         }
     }
 }
 
 void bufferToBuffer(Area from, ScreenPos to, buffer_t &a, buffer_t& b) {
-    if (b.size() <= from.height() + to.y) {
+    if ((signed)b.size() <= from.height() + to.y) {
         b.resize(from.height() + to.y);
     }
     for (int j = 0; j < from.height(); j++) {
-        if (b[j + to.y].size() <= from.width() + to.x) {
+        if ((signed)b[j + to.y].size() <= from.width() + to.x) {
             b[j + to.y].resize(from.width() + to.x, ' ');
         }
         for (int i = 0; i < from.width(); i++) {
@@ -150,7 +151,7 @@ void bufferToBuffer(Area from, ScreenPos to, buffer_t &a, buffer_t& b) {
 }
 
 void bufferToBuffer(ScreenPos p, buffer_t &a, buffer_t& b) {
-    Area from = {0, 0, a[a.size() - 1].size(), a.size()};
+    Area from = {0, 0, (int32_t)a[a.size() - 1].size(), (int32_t)a.size()};
     bufferToBuffer(from, p, a, b);
 }
 
@@ -168,20 +169,26 @@ void fileToBuffer(std::string filename, buffer_t& buffer) {
     f.close();
 }
 
-void bufferToFile(std::string filename, buffer_t& buffer) {
-    std::ofstream f(filename);
-    for (int i = 0; i < buffer.size(); i++) {
-        for (int j = 0; j < buffer[i].size(); j++) {
+std::string bufferToString(buffer_t& buffer) {
+    std::stringstream f;
+    for (uint32_t i = 0; i < buffer.size(); i++) {
+        for (uint32_t j = 0; j < buffer[i].size(); j++) {
             f << buffer[i][j];
         }
         f << "\n";
     }
+    return f.str();
+}
+
+void bufferToFile(std::string filename, buffer_t& buffer) {
+    std::ofstream f(filename);
+    f << bufferToString(buffer);
     statusLine = "[Wrote " + std::to_string(file.size()) + " lines]";
 }
 
 void stripEmptyLines(buffer_t& buffer) {
     int remove_from = -1;
-    for (int i = buffer.size() - 1; i >= 0; i--) {
+    for (int i = (signed)buffer.size() - 1; i >= 0; i--) {
         for (char c : buffer[i]) {
             if (c != ' ') {
                 remove_from = i + 1;
@@ -213,10 +220,10 @@ void inpchar(char ch) {
         pos += dir;
     }
     ScreenPos adj = beforePos - offset;
-    if (adj.y >= file.size()) {
+    if (adj.y >= (signed)file.size()) {
         file.resize(adj.y + 1);
     }
-    if (adj.x >= file[adj.y].size()) {
+    if (adj.x >= (signed)file[adj.y].size()) {
         file[adj.y].resize(adj.x + 1, ' ');
     }
     if (insert) {
@@ -236,8 +243,8 @@ void backspace() {
     pos = pos - dir;
     ScreenPos adj = beforePos - offset,
               adja= pos - offset;
-    if (adj.y >= file.size()) { return; }
-    if (adj.x > file[adj.y].size()) { return; }
+    if (adj.y >= (signed)file.size()) { return; }
+    if (adj.x >  (signed)file[adj.y].size()) { return; }
     if (insert) {
         file[adja.y].erase(file[adja.y].begin() + adja.x);
     } else {
@@ -299,8 +306,9 @@ void scrollRight() {
 
 int x = 0;
 bool progRunning = false;
-void run() {
+void runProg() {
     progRunning = true;
+    loadCode(bufferToString(file));
 }
 
 void mainLoop() {
@@ -318,7 +326,7 @@ void mainLoop() {
     if (isprint(ch) || ch == 10) {
         inpchar(ch);
     }
-    //printw((std::to_string(ch) + " ").c_str()); if (ch == 9) running = false; refresh(); return;
+    //printw((std::to_string(ch) + " ").c_str()); if (ch == 9) guiRunning = false; refresh(); return;
     ScreenPos before = pos;
     if (ch == KEY_UP || ch == 337) {
         pos.y -= 1;
@@ -345,7 +353,7 @@ void mainLoop() {
    pos.setBounds(max);
 
    switch (ch) {
-       case 27: running = false; save(); break;
+       case 27: guiRunning = false; save(); break;
         case KEY_BACKSPACE: backspace(); break;
         case 402: //shr
         case 337: //shu
@@ -374,12 +382,12 @@ void mainLoop() {
         case KEY_END: pos.x = max.x; break;
         case KEY_HOME: pos.x = 0; break;
         case 9: toggleInsert(); break;
-        case 17: running = false; break; //don't save, then exit
+        case 17: guiRunning = false; break; //don't save, then exit
         case 566: dir = ScreenPos(0, -1); break; //ctrl-up
         case 560: dir = ScreenPos(1,  0); break; //ctrl-right
         case 525: dir = ScreenPos(0,  1); break; //ctrl-down
         case 545: dir = ScreenPos(-1, 0); break; //ctrl-left
-        case 269: run(); break; //f5: run
+        case 269: runProg(); break; //f5: run
     }
     bufferToScreen(offset, file);
     if (sel.x0 > -1) {
@@ -429,7 +437,7 @@ int main(int argc, char ** argv) {
     drawBottomBar();
     pos = ScreenPos(0, 0);
     setPos(pos);
-    while (running) {
+    while (guiRunning) {
         mainLoop();
     }
     endwin();
