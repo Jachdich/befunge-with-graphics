@@ -3,105 +3,121 @@
 #include <fstream>
 #include <vector>
 #include <string.h>
-#include <SDL2/SDL.h>
 #include <iostream>
-#include "befunge.h"
-using namespace std;
-#define stacksize 1024 * 1024 * 102
+#include "../include/befunge.h"
 
-vector<vector<table_t>> table;
-signed long stack[stacksize];
-int return_vector_stack[1024];
-int sp = 0;
-int vector_sp = 0;
-
-int  ip[] = {0, 0};
-char direction = '>';
-bool running = true;
-int  tablelen = 0;
-bool stringMode = false;
-bool quiet = false;
-bool debug = false;
-
-SDL_Surface * screen = NULL;
-SDL_Window  * window = NULL;
-SDL_Renderer * renderer = NULL;
-
-void error(std::string msg, bool exit) {
+void Befunge::error(std::string msg, bool exit) {
     printf("The program has created the following exception:\n%s\n", msg.c_str());
     running = !exit;
 }
 
-void clean(vector<vector<table_t>>& table) {
+void Befunge::clean(std::vector<std::vector<table_t>>& table) {
     long unsigned int maxlen = 0;
     for (unsigned int i = 0; i < table.size(); i++) {
-        vector<table_t> line = table[i];
+        std::vector<table_t> line = table[i];
         if (line.size() > maxlen) {
             maxlen = line.size();
         }
     }
-    //printf("maxlen: %lu\n", maxlen);
+    // printf("maxlen: %lu\n", maxlen);
     for (unsigned int i = 0; i < table.size(); i++) {
-        //printf("size init: %d\n", j);
+        // printf("size init: %d\n", table[i].size());
         table[i].resize(maxlen, 0);
-        //printf("size post: %d\n", table[i].size());
+        // printf("size post: %d\n", table[i].size());
     }
 }
 
-table_t pop() {
-    if (sp > 0) {
-        return stack[sp--];
+table_t Befunge::pop() {
+    if (stack.size() > 0) {
+        int64_t val = stack.back();
+        stack.pop_back();
+        return val;
     } else {
         return 0;
     }
 }
 
-void push(table_t x) {
-    stack[++sp] = x;
-    if (sp >= stacksize) {
-        printf("Out of memory!");
-        running = false;
-    }
+void Befunge::push(table_t x) {
+    stack.push_back(x);
 }
 
-int popvector() {
-    if (vector_sp > 0) {
-        return return_vector_stack[vector_sp--];
+int64_t Befunge::popvector() {
+    if (return_vector_stack.size() > 0) {
+        int64_t val = return_vector_stack.back();
+        return_vector_stack.pop_back();
+        return val;
     } else {
-        error("Try to return when no return vector was found\n", true);
+        // maybe we should warn the users...
         return 0;
     }
 }
 
-void pushvector(int x) {
-    return_vector_stack[++vector_sp] = x;
-    if (vector_sp >= 1024) {
-        error("Max recursion depth exceeded\n", true);
-    }
+void Befunge::pushvector(int64_t x) {
+    return_vector_stack.push_back(x);
 }
 
-void advanceIP(int x) {
+void Befunge::advanceIP(int x) {
     switch (direction) {
-        case '>': ip[0] += x; return;
-        case '<': ip[0] -= x; return;
-        case '^': ip[1] -= x; return;
-        case 'v': ip[1] += x; return;
+        case '>': ip[0] += x; break;
+        case '<': ip[0] -= x; break;
+        case '^': ip[1] -= x; break;
+        case 'v': ip[1] += x; break;
     }
 }
 
 const std::string reset("\033[0m");
 const std::string green("\033[42m");
 
-void step() {
+void DrawCircle(SDL_Renderer * renderer, int32_t centreX, int32_t centreY, int32_t radius) {
+   const int32_t diameter = (radius * 2);
+
+   int32_t x = (radius - 1);
+   int32_t y = 0;
+   int32_t tx = 1;
+   int32_t ty = 1;
+   int32_t error = (tx - diameter);
+
+   while (x >= y) {
+      // Each of the following renders an octant of the circle
+      SDL_RenderDrawPoint(renderer, centreX + x, centreY - y);
+      SDL_RenderDrawPoint(renderer, centreX + x, centreY + y);
+      SDL_RenderDrawPoint(renderer, centreX - x, centreY - y);
+      SDL_RenderDrawPoint(renderer, centreX - x, centreY + y);
+      SDL_RenderDrawPoint(renderer, centreX + y, centreY - x);
+      SDL_RenderDrawPoint(renderer, centreX + y, centreY + x);
+      SDL_RenderDrawPoint(renderer, centreX - y, centreY - x);
+      SDL_RenderDrawPoint(renderer, centreX - y, centreY + x);
+
+      if (error <= 0) {
+         ++y;
+         error += ty;
+         ty += 2;
+      }
+
+      if (error > 0) {
+         --x;
+         tx += 2;
+         error += (tx - diameter);
+      }
+   }
+}
+
+
+void Befunge::step() {
+    if (ip[1] < 0 || ip[0] < 0 || table.size() <= (unsigned)ip[1] || table[ip[1]].size() <= (unsigned)ip[0]) {
+        // off the board
+        running = false;
+        return;
+    }
     char curr_char = table[ip[1]][ip[0]];
     if (debug) {
-    /*
+    
         printf("%d, %d, ", ip[0], ip[1]);
         printf("%c, [", curr_char);
-        for (int i = 0; i < sp; i++) {
+        for (int i = 0; i < stack.size(); i++) {
             printf("%li, ", stack[i]);
         }
-        printf("]\n");*/
+        printf("]\n");
     }
     if (curr_char == '"') {
         stringMode = !stringMode; return;
@@ -125,27 +141,43 @@ void step() {
             case '/': { int a = pop(); int b = pop(); push(b / a); return; }
             case '%': { int a = pop(); int b = pop(); push(b % a); return; }
             case ':': { int a = pop(); push(a); push(a); return; }
-            case '$': { --sp; return;}
+            case '$': { if (stack.size() > 0) stack.pop_back(); return;}
             case '#': { advanceIP(1); return;}
             case '!': { int a = pop(); push(a == 0 ? 1 : 0); return;}
-            case '`': { int a = pop(); int b = pop(); push(b >  a ? 1 : 0); return; }
+            case '`': { int a = pop(); int b = pop(); push(b > a ? 1 : 0); return; }
             case '|': { int a = pop(); direction = (a == 0 ? 'v' : '^'); return; }
             case '_': { int a = pop(); direction = (a == 0 ? '>' : '<'); return; }
             case '\\': {int a = pop(); int b = pop(); push(a); push(b); return; }
-          //case '?' : {direction = "><v^".charAt((int)(Math.random() * 4)); return;}
+            case '?' : { direction = "><v^"[rand() % 4]; return;}
             case '.': if (!quiet) { printf("%li ", pop()); } else { pop(); } return;
             case ',': if (!quiet) { printf("%c", (char)pop()); } else { pop(); } return;
 
+            case '~': {
+                push(fgetc(stdin));
+                break;
+            }
+            
             case 'j': {
                 int b = pop();
                 int a = pop();
-                pushvector(ip[0]);
-                pushvector(ip[1]);
-                pushvector(direction);
-                ip[0] = a;
-                ip[1] = b;
-                direction = '>';
+                if (a < 0 || b < 0) {
+                    if (a == -1 && b == 0) {
+                        if (renderer == NULL) return;
+                        int64_t y = pop();
+                        int64_t x = pop();
+                        int64_t radius = pop();
+                        DrawCircle(renderer, x, y, radius);
+                    }
+                } else {
+                    // real jump
+                    pushvector(ip[0]);
+                    pushvector(ip[1]);
+                    pushvector(direction);
+                    ip[0] = a;
+                    ip[1] = b;
+                    direction = '>';
                 advanceIP(-1);
+                }
                 return;
             }
 
@@ -166,7 +198,10 @@ void step() {
                 int b = pop();
                 int a = pop();
                 table_t c = pop();
-                table[a][b] = c;
+                // TODO resize to fit
+                if (a >= 0 && a < table.size() && b >= 0 && b < table[a].size()) {
+                    table[a][b] = c;
+                }
                 return;
             }
 
@@ -190,12 +225,12 @@ void step() {
             }
 
             case 'c':
-                if (renderer == NULL) { error("Screen not initialised", true); return; }
+                if (renderer == NULL) { return; }
                 SDL_RenderClear(renderer);
                 return;
 
             case 'x': {
-                if (renderer == NULL) { error("Screen not initialised", true); return; }
+                if (renderer == NULL) { return; }
                 int b = pop();
                 int a = pop();
                 SDL_RenderDrawPoint(renderer, a, b);
@@ -203,28 +238,30 @@ void step() {
             }
 
             case 'z': {
-                if (renderer == NULL) { error("Screen not initialised", true); return; }
+                if (renderer == NULL) { return; }
                 SDL_Event event;
                 SDL_PollEvent(&event);
                 if (event.type == SDL_WINDOWEVENT) {
-                     if (event.window.event ==SDL_WINDOWEVENT_CLOSE) {
+                     if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
                          push(1);
+                     } else {
+                        push(0);
                     }
-                }
-                if (event.type == SDL_KEYDOWN) {
+                } else if (event.type == SDL_KEYDOWN) {
                     push(event.key.keysym.sym);
                     push(2);
                     //printf("%d\n", event.key.keysym.sym);
-                }
-                if (event.type == SDL_KEYUP) {
+                } else if (event.type == SDL_KEYUP) {
                     push(event.key.keysym.sym);
                     push(3);
+                } else {
+                    push(0);
                 }
                 return;
             }
 
             case 'l': {
-                if (renderer == NULL) { error("Screen not initialised", true); return; }
+                if (renderer == NULL) { return; }
                 int y2 = pop();
                 int x2 = pop();
                 int y1 = pop();
@@ -234,7 +271,7 @@ void step() {
             }
 
             case 'f': {
-                if (renderer == NULL) { error("Screen not initialised", true); return; }
+                if (renderer == NULL) { return; }
                 int b = pop();
                 int g = pop();
                 int r = pop();
@@ -243,7 +280,7 @@ void step() {
             }
 
             case 'u':
-                if (renderer == NULL) { error("Screen not initialised", true); return; }
+                if (renderer == NULL) { return; }
                 SDL_RenderPresent(renderer);
                 return;
 
@@ -253,17 +290,33 @@ void step() {
     }
 }
 
-void loadCode(string code) {
+void Befunge::loadCode(std::string code) {
     std::stringstream ss(code);
     std::string to;
 
     while(std::getline(ss,to,'\n')) {
-        table.push_back(vector<table_t>(to.begin(), to.end()));
+        table.push_back(std::vector<table_t>(to.begin(), to.end()));
     }
     clean(table);
 }
 
-void run() {
+// Robert Jenkins' 96 bit Mix Function
+unsigned long mix(unsigned long a, unsigned long b, unsigned long c) {
+    a=a-b;  a=a-c;  a=a^(c >> 13);
+    b=b-c;  b=b-a;  b=b^(a << 8);
+    c=c-a;  c=c-b;  c=c^(b >> 13);
+    a=a-b;  a=a-c;  a=a^(c >> 12);
+    b=b-c;  b=b-a;  b=b^(a << 16);
+    c=c-a;  c=c-b;  c=c^(b >> 5);
+    a=a-b;  a=a-c;  a=a^(c >> 3);
+    b=b-c;  b=b-a;  b=b^(a << 10);
+    c=c-a;  c=c-b;  c=c^(b >> 15);
+    return c;
+}
+
+void Befunge::run() {
+    unsigned long seed = mix(clock(), time(NULL), 0);
+    srand(seed);
     while (running) {
         step();
         advanceIP(1);

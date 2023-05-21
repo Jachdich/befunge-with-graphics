@@ -4,12 +4,14 @@
 #include <fstream>
 #include <iostream>
 
+Befunge vm;
+
 int main(int argc, char ** argv) {
     if (argc > 2) {
         if (std::string(argv[2]) == "-q") {
-            quiet = true;
+            vm.quiet = true;
         } else if (std::string(argv[2]) == "-d") {
-            debug = true;
+            vm.debug = true;
         }
     }
     std::string source;
@@ -27,7 +29,7 @@ int main(int argc, char ** argv) {
     }
     myReadFile.close();
 
-    loadCode(source);
-    run();
+    vm.loadCode(source);
+    vm.run();
     return 0;
 }

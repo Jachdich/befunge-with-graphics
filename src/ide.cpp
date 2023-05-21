@@ -82,6 +82,7 @@ ScreenPos offset = ScreenPos(0, 0);
 Area sel = {-1, -1, -1, -1};
 bool guiRunning = true;
 bool insert = false;
+Befunge befunge;
 
 buffer_t clipboard;
 buffer_t file;
@@ -308,14 +309,14 @@ int x = 0;
 bool progRunning = false;
 void runProg() {
     progRunning = true;
-    loadCode(bufferToString(file));
+    befunge.loadCode(bufferToString(file));
 }
 
 void mainLoop() {
     if (progRunning) {
         timeout(0);
         int ch = getch();
-        step();
+        befunge.step();
         if (ch == 10) progRunning = false;
         refresh();
         return;
