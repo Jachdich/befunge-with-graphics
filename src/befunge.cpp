@@ -189,18 +189,23 @@ void Befunge::step() {
                 return;
 
             case 'g': {
-                int b = pop();
-                push(table[pop()][b]);
+                int y = pop();
+                int x = pop();
+                // if (in_range(x, y)) {
+                    push(table[y][x]);
+                // } else {
+                    // push(0);
+                // }
                 return;
             }
 
             case 'p': {
-                int b = pop();
-                int a = pop();
+                int64_t y = pop();
+                int64_t x = pop();
                 table_t c = pop();
                 // TODO resize to fit
-                if (a >= 0 && a < table.size() && b >= 0 && b < table[a].size()) {
-                    table[a][b] = c;
+                if (y >= 0 && y < table.size() && x >= 0 && x < table[y].size()) {
+                    table[y][x] = c;
                 }
                 return;
             }
